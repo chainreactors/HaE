@@ -59,20 +59,21 @@ export class ScanService {
 
   private getBuiltInRipgrepPath(): string | null {
     const appRoot = vscode.env.appRoot;
-    const rgName = process.platform === 'win32' ? 'rg.exe' : 'rg';
+    const packageNames = ['@vscode/ripgrep', '@vscode/ripgrep-universal'];
+    const packageRoots = ['node_modules', 'node_modules.asar.unpacked'];
 
-    const possiblePaths = [
-      path.join(appRoot, 'node_modules', '@vscode', 'ripgrep', 'bin', rgName),
-      path.join(appRoot, 'node_modules.asar.unpacked', '@vscode', 'ripgrep', 'bin', rgName),
-      path.join(appRoot, 'node_modules', 'vscode-ripgrep', 'bin', rgName),
-      path.join(appRoot, 'node_modules.asar.unpacked', 'vscode-ripgrep', 'bin', rgName),
-    ];
+    for (const packageName of packageNames) {
+      for (const packageRoot of packageRoots) {
+        const modulePath = path.join(appRoot, packageRoot, ...packageName.split('/'));
 
-    for (const rgPath of possiblePaths) {
-      if (fs.existsSync(rgPath)) {
-        logger.info(`Found built-in ripgrep at: ${rgPath}`);
+        try {
+          const packageModule = require(modulePath) as { rgPath?: string };
+          if (typeof packageModule.rgPath === 'string' && fs.existsSync(packageModule.rgPath)) {
+            logger.info(`Found built-in ripgrep via ${packageName}: ${packageModule.rgPath}`);
 
-        return rgPath;
+            return packageModule.rgPath;
+          }
+        } catch {}
       }
     }
 
