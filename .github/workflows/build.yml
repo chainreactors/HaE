@@ -113,7 +113,7 @@ jobs:
           TAG="v$(date +%Y%m%d)-$(echo ${{ github.sha }} | cut -c1-7)"
           gh release create "$TAG" \
             --title "HaE with Proton + Fingers Engine $TAG" \
-            --generate-release-notes \
+            --notes "HaE with Proton + Fingers Engine" \
             build/libs/HaE.jar \
             build/libs/HaE-linux-x86-64.jar \
             build/libs/HaE-linux-aarch64.jar \
