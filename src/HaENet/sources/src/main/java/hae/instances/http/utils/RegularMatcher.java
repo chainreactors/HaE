@@ -1,8 +1,8 @@
 package hae.instances.http.utils;
 
 import burp.api.montoya.MontoyaApi;
-import com.chainreactors.proton.hae.ProtonHaEEngine;
-import com.chainreactors.proton.hae.model.MatchResult;
+import hae.engine.ProtonEngine;
+import hae.engine.MatchResult;
 import hae.cache.DataCache;
 import hae.repository.DataRepository;
 import hae.repository.RuleRepository;
@@ -26,7 +26,7 @@ public class RegularMatcher {
     private final DataRepository dataRepository;
     private final RuleRepository ruleRepository;
 
-    private volatile ProtonHaEEngine protonEngine;
+    private volatile ProtonEngine protonEngine;
 
     public RegularMatcher(
             MontoyaApi api,
@@ -44,7 +44,7 @@ public class RegularMatcher {
 
     private void initProtonEngine() {
         try {
-            protonEngine = new ProtonHaEEngine();
+            protonEngine = new ProtonEngine();
             String rulesJson = buildRulesJson();
             if (rulesJson != null && !rulesJson.isEmpty()) {
                 protonEngine.loadRules(rulesJson);

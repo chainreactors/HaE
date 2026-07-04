@@ -8,11 +8,63 @@ on:
 permissions:
   contents: write
 
-env:
-  HAE_DIR: src/HaENet/sources
-
 jobs:
-  build:
+  build-engine:
+    strategy:
+      matrix:
+        include:
+          - {os: ubuntu-latest, goos: linux,   goarch: amd64, jna: linux-x86-64,    zig_target: x86_64-linux-gnu}
+          - {os: ubuntu-latest, goos: linux,   goarch: arm64, jna: linux-aarch64,    zig_target: aarch64-linux-gnu}
+          - {os: ubuntu-latest, goos: windows, goarch: amd64, jna: win32-x86-64,    zig_target: x86_64-windows-gnu}
+          - {os: macos-latest,  goos: darwin,  goarch: amd64, jna: darwin-x86-64,    zig_target: ""}
+          - {os: macos-latest,  goos: darwin,  goarch: arm64, jna: darwin-aarch64,   zig_target: ""}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout proton
+        uses: actions/checkout@v4
+        with:
+          repository: chainreactors/proton
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install Zig
+        if: matrix.zig_target != ''
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: '0.13.0'
+
+      - name: Build shared library
+        env:
+          CGO_ENABLED: '1'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.zig_target != '' && format('zig cc -target {0}', matrix.zig_target) || '' }}
+          CXX: ${{ matrix.zig_target != '' && format('zig c++ -target {0}', matrix.zig_target) || '' }}
+          GONOSUMCHECK: 'github.com/chainreactors/*'
+          GONOSUMDB: 'github.com/chainreactors/*'
+        run: |
+          mkdir -p out/${{ matrix.jna }}
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            LIBNAME="engine.dll"
+          elif [ "${{ matrix.goos }}" = "darwin" ]; then
+            LIBNAME="libengine.dylib"
+          else
+            LIBNAME="libengine.so"
+          fi
+          go build -buildmode=c-shared -ldflags="-s -w" -o "out/${{ matrix.jna }}/${LIBNAME}" ./cmd/export/
+          rm -f out/${{ matrix.jna }}/*.h
+          ls -lh out/${{ matrix.jna }}/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.jna }}
+          path: out/
+
+  build-jar:
+    needs: build-engine
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,59 +76,39 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Download proton natives
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p $HAE_DIR/natives
-          gh release download --repo chainreactors/proton --pattern 'proton-natives.tar.gz' --dir /tmp
-          tar xzf /tmp/proton-natives.tar.gz -C $HAE_DIR/natives/
-          ls -lhR $HAE_DIR/natives/
+      - name: Download all natives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: src/HaENet/sources/natives
 
-      - name: Build proton-hae SDK
-        run: |
-          git clone --depth 1 https://github.com/chainreactors/proton /tmp/proton
-          cd /tmp/proton/sdk/java/proton-hae
-          mvn package -q -DskipTests
-          mkdir -p $GITHUB_WORKSPACE/$HAE_DIR/libs
-          cp target/proton-hae-*.jar $GITHUB_WORKSPACE/$HAE_DIR/libs/
-          ls -lh $GITHUB_WORKSPACE/$HAE_DIR/libs/
+      - name: Verify natives
+        run: ls -lhR src/HaENet/sources/natives/
 
       - name: Build all JARs
-        working-directory: ${{ env.HAE_DIR }}
+        working-directory: src/HaENet/sources
         run: gradle jarAll
 
       - name: List artifacts
-        working-directory: ${{ env.HAE_DIR }}
+        working-directory: src/HaENet/sources
         run: ls -lh build/libs/*.jar
 
       - uses: actions/upload-artifact@v4
         with:
           name: HaE-jars
-          path: ${{ env.HAE_DIR }}/build/libs/*.jar
+          path: src/HaENet/sources/build/libs/*.jar
 
       - name: Release
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-        working-directory: ${{ env.HAE_DIR }}
+        working-directory: src/HaENet/sources
         run: |
           TAG="v$(date +%Y%m%d)-$(echo ${{ github.sha }} | cut -c1-7)"
           gh release create "$TAG" \
             --title "HaE with Proton Engine $TAG" \
-            --notes "$(cat <<'NOTES'
-          HaE Burp extension with Proton regex engine.
-
-          | File | Description |
-          |------|-------------|
-          | `HaE.jar` | Fat JAR — all platforms (Linux/Windows/macOS) |
-          | `HaE-linux-x86-64.jar` | Standalone — Linux amd64 |
-          | `HaE-linux-aarch64.jar` | Standalone — Linux arm64 |
-          | `HaE-win32-x86-64.jar` | Standalone — Windows amd64 |
-          | `HaE-darwin-x86-64.jar` | Standalone — macOS Intel |
-          | `HaE-darwin-aarch64.jar` | Standalone — macOS Apple Silicon |
-          NOTES
-          )" \
+            --notes "HaE Burp extension with Proton regex engine." \
             build/libs/HaE.jar \
             build/libs/HaE-linux-x86-64.jar \
             build/libs/HaE-linux-aarch64.jar \
