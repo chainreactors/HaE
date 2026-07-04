@@ -1,11 +1,8 @@
 package hae.instances.http.utils;
 
 import burp.api.montoya.MontoyaApi;
-import dk.brics.automaton.Automaton;
-import dk.brics.automaton.AutomatonMatcher;
-import dk.brics.automaton.RegExp;
-import dk.brics.automaton.RunAutomaton;
-import hae.AppConstants;
+import com.chainreactors.proton.hae.ProtonHaEEngine;
+import com.chainreactors.proton.hae.model.MatchResult;
 import hae.cache.DataCache;
 import hae.repository.DataRepository;
 import hae.repository.RuleRepository;
@@ -16,27 +13,20 @@ import hae.utils.string.HashCalculator;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class RegularMatcher {
 
-    private static final Map<String, Pattern> nfaPatternCache =
-            new ConcurrentHashMap<>();
-    private static final Map<String, RunAutomaton> dfaAutomatonCache =
-            new ConcurrentHashMap<>();
-    private static final Pattern formatIndexPattern = Pattern.compile(
-            "\\{(\\d+)}"
-    );
     private static final int HASH_FULL_LIMIT = 2 * 1024 * 1024;
     private static final int HASH_SAMPLE = 64 * 1024;
+
     private final MontoyaApi api;
     private final ConfigLoader configLoader;
     private final DataRepository dataRepository;
     private final RuleRepository ruleRepository;
+
+    private volatile ProtonHaEEngine protonEngine;
 
     public RegularMatcher(
             MontoyaApi api,
@@ -48,6 +38,35 @@ public class RegularMatcher {
         this.configLoader = configLoader;
         this.dataRepository = dataRepository;
         this.ruleRepository = ruleRepository;
+
+        initProtonEngine();
+    }
+
+    private void initProtonEngine() {
+        try {
+            protonEngine = new ProtonHaEEngine();
+            String rulesJson = buildRulesJson();
+            if (rulesJson != null && !rulesJson.isEmpty()) {
+                protonEngine.loadRules(rulesJson);
+            }
+            api.logging().logToOutput("[*] Proton engine loaded (version: " + protonEngine.version() + ")");
+        } catch (Exception e) {
+            api.logging().logToError("[!] Proton engine not available, falling back to Java regex: " + e.getMessage());
+            protonEngine = null;
+        }
+    }
+
+    public void reloadProtonRules() {
+        if (protonEngine != null) {
+            try {
+                String rulesJson = buildRulesJson();
+                if (rulesJson != null && !rulesJson.isEmpty()) {
+                    protonEngine.updateRules(rulesJson);
+                }
+            } catch (Exception e) {
+                api.logging().logToError("[!] Proton rule reload failed: " + e.getMessage());
+            }
+        }
     }
 
     public Map<String, Map<String, Object>> performRegexMatching(
@@ -60,7 +79,6 @@ public class RegularMatcher {
             boolean persist,
             boolean ignoreDataCache
     ) {
-        // 删除动态响应头再进行存储
         String originalMessage = message;
         String dynamicHeader = configLoader.getDynamicHeader();
 
@@ -74,65 +92,73 @@ public class RegularMatcher {
 
         String messageIndex = computeMessageIndex(host, message);
 
-        // 从数据缓存中读取
         Map<String, Map<String, Object>> dataCacheMap = ignoreDataCache
                 ? null
                 : DataCache.get(messageIndex);
 
-        // 存在则返回
         if (dataCacheMap != null) {
             return dataCacheMap;
         }
 
-        // 最终返回的结果
         String firstLine = originalMessage.split("\\r?\\n", 2)[0];
-        Map<String, Map<String, Object>> finalMap = applyMatchingRules(
-                host,
-                url,
-                type,
-                originalMessage,
-                firstLine,
-                header,
-                body,
-                persist
-        );
 
-        // 数据缓存写入，有可能是空值，当作匹配过的索引不再匹配
+        Map<String, Map<String, Object>> finalMap;
+        if (protonEngine != null && protonEngine.isLoaded()) {
+            finalMap = matchWithProton(host, url, type, firstLine, header, body, persist);
+        } else {
+            finalMap = applyMatchingRules(host, url, type, originalMessage, firstLine, header, body, persist);
+        }
+
         DataCache.put(messageIndex, finalMap);
+        return finalMap;
+    }
+
+    private Map<String, Map<String, Object>> matchWithProton(
+            String host,
+            String url,
+            String type,
+            String firstLine,
+            String header,
+            String body,
+            boolean persist
+    ) {
+        Map<String, Map<String, Object>> finalMap = new ConcurrentHashMap<>();
+
+        try {
+            List<MatchResult> results = protonEngine.match(type, header, body, firstLine);
+
+            for (MatchResult result : results) {
+                String name = result.getName();
+                String color = result.getColor();
+                List<String> data = result.getData();
+
+                if (data == null || data.isEmpty()) continue;
+
+                Map<String, Object> tmpMap = new HashMap<>();
+                tmpMap.put("color", color);
+                tmpMap.put("data", String.join(hae.AppConstants.boundary, data));
+
+                String nameAndSize = String.format("%s (%s)", name, data.size());
+                finalMap.put(nameAndSize, tmpMap);
+
+                String matchContent = firstLine + "\r\n" + header + "\r\n\r\n" + body;
+                for (String match : data) {
+                    ValidatorService.putContext(name, match, matchContent);
+                    ValidatorService.putUrl(name, match, url);
+                }
+
+                if (persist) {
+                    dataRepository.mergeData(host, name, new ArrayList<>(data), true);
+                }
+            }
+        } catch (Exception e) {
+            api.logging().logToError("[!] Proton match error: " + e.getMessage());
+        }
 
         return finalMap;
     }
 
-    private String computeMessageIndex(String host, String message) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("MD5");
-            digest.update(host.getBytes(StandardCharsets.UTF_8));
-            digest.update((byte) '|');
-
-            int len = message.length();
-            if (len <= HASH_FULL_LIMIT) {
-                digest.update(message.getBytes(StandardCharsets.UTF_8));
-            } else {
-                digest.update(
-                        Integer.toString(len).getBytes(StandardCharsets.UTF_8)
-                );
-                digest.update((byte) '|');
-                digest.update(
-                        message
-                                .substring(0, HASH_SAMPLE)
-                                .getBytes(StandardCharsets.UTF_8)
-                );
-                digest.update(
-                        message
-                                .substring(len - HASH_SAMPLE)
-                                .getBytes(StandardCharsets.UTF_8)
-                );
-            }
-            return HashCalculator.bytesToHex(digest.digest());
-        } catch (Exception e) {
-            return "";
-        }
-    }
+    // ─── Fallback: Java regex engine (kept for when proton is unavailable) ───
 
     private Map<String, Map<String, Object>> applyMatchingRules(
             String host,
@@ -152,7 +178,6 @@ public class RegularMatcher {
                 .forEach(i -> {
                     for (RuleDefinition rule : ruleRepository.getRulesByGroup(i)) {
                         String matchContent = "";
-                        // 遍历获取规则
                         List<String> result;
                         Map<String, Object> tmpMap = new HashMap<>();
 
@@ -163,17 +188,14 @@ public class RegularMatcher {
                         String format = rule.getFormat();
                         String color = rule.getColor();
                         String scope = rule.getScope();
-                        String engine = rule.getEngine();
                         boolean sensitive = rule.isSensitive();
 
-                        // 判断规则是否开启与作用域
                         if (
                                 loaded &&
                                         (scope.contains(type) ||
                                                 scope.contains("any") ||
                                                 type.equals("any"))
                         ) {
-                            // 在此处检查内容是否缓存，缓存则返回为空
                             switch (scope) {
                                 case "any":
                                 case "request":
@@ -198,70 +220,39 @@ public class RegularMatcher {
                                     break;
                             }
 
-                            // 匹配内容为空则跳过当前规则，继续下一条规则
                             if (matchContent.isBlank()) {
                                 continue;
                             }
 
                             try {
                                 result = new ArrayList<>(
-                                        executeRegexEngine(
-                                                firstRegex,
-                                                secondRegex,
-                                                matchContent,
-                                                format,
-                                                engine,
-                                                sensitive
-                                        )
+                                        javaRegexMatch(firstRegex, secondRegex, matchContent, format, sensitive)
                                 );
                             } catch (Exception e) {
                                 api.logging().logToError(
-                                        String.format(
-                                                "[x] Error Info:\nName: %s\nRegex: %s",
-                                                name,
-                                                firstRegex
-                                        )
+                                        String.format("[x] Error Info:\nName: %s\nRegex: %s", name, firstRegex)
                                 );
-                                api.logging().logToError(e.getMessage());
                                 continue;
                             }
 
-                            // 去除重复内容
                             Set<String> tmpSet = new LinkedHashSet<>(result);
                             result.clear();
                             result.addAll(tmpSet);
 
                             if (!result.isEmpty()) {
                                 tmpMap.put("color", color);
-                                String dataStr = String.join(
-                                        AppConstants.boundary,
-                                        result
-                                );
-                                tmpMap.put("data", dataStr);
+                                tmpMap.put("data", String.join(hae.AppConstants.boundary, result));
 
-                                String nameAndSize = String.format(
-                                        "%s (%s)",
-                                        name,
-                                        result.size()
-                                );
+                                String nameAndSize = String.format("%s (%s)", name, result.size());
                                 finalMap.put(nameAndSize, tmpMap);
 
                                 for (String match : result) {
-                                    ValidatorService.putContext(
-                                            name,
-                                            match,
-                                            matchContent
-                                    );
+                                    ValidatorService.putContext(name, match, matchContent);
                                     ValidatorService.putUrl(name, match, url);
                                 }
 
                                 if (persist) {
-                                    dataRepository.mergeData(
-                                            host,
-                                            name,
-                                            result,
-                                            true
-                                    );
+                                    dataRepository.mergeData(host, name, result, true);
                                 }
                             }
                         }
@@ -271,214 +262,115 @@ public class RegularMatcher {
         return finalMap;
     }
 
-    private List<String> executeRegexEngine(
-            String firstRegex,
-            String secondRegex,
-            String content,
-            String format,
-            String engine,
-            boolean sensitive
+    private List<String> javaRegexMatch(
+            String firstRegex, String secondRegex, String content,
+            String format, boolean sensitive
     ) {
         List<String> retList = new ArrayList<>();
-        if ("nfa".equals(engine)) {
-            Matcher matcher = createPatternMatcher(
-                    firstRegex,
-                    content,
-                    sensitive
-            );
-            retList.addAll(
-                    extractRegexMatchResults(
-                            secondRegex,
-                            format,
-                            sensitive,
-                            matcher
-                    )
-            );
-        } else {
-            // DFA不支持格式化输出，因此不关注format
-            String newContent = content;
-            String newFirstRegex = firstRegex;
-            if (!sensitive) {
-                newContent = content.toLowerCase();
-                newFirstRegex = firstRegex.toLowerCase();
+        int flags = sensitive ? 0 : java.util.regex.Pattern.CASE_INSENSITIVE;
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(firstRegex, flags);
+        java.util.regex.Matcher matcher = pattern.matcher(content);
+
+        if (secondRegex.isEmpty()) {
+            if ("{0}".equals(format)) {
+                while (matcher.find()) {
+                    if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
+                        retList.add(matcher.group(1));
+                    }
+                }
+            } else {
+                while (matcher.find()) {
+                    if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
+                        retList.add(matcher.group(1));
+                    }
+                }
             }
-            AutomatonMatcher autoMatcher = createAutomatonMatcher(
-                    newFirstRegex,
-                    newContent
-            );
-            retList.addAll(
-                    extractRegexMatchResults(secondRegex, autoMatcher, content)
-            );
+        } else {
+            while (matcher.find()) {
+                String matchContent = matcher.group(1);
+                if (matchContent != null && !matchContent.isEmpty()) {
+                    java.util.regex.Pattern sp = java.util.regex.Pattern.compile(secondRegex, flags);
+                    java.util.regex.Matcher sm = sp.matcher(matchContent);
+                    if (sm.find()) {
+                        retList.add(matchContent);
+                    }
+                }
+            }
         }
         return retList;
     }
 
-    private List<String> extractRegexMatchResults(
-            String secondRegex,
-            String format,
-            boolean sensitive,
-            Matcher matcher
-    ) {
-        List<String> matches = new ArrayList<>();
-        if (secondRegex.isEmpty()) {
-            matches.addAll(formatMatchResults(matcher, format));
-        } else {
-            while (matcher.find()) {
-                String matchContent = matcher.group(1);
-                if (!matchContent.isEmpty()) {
-                    Matcher secondMatcher = createPatternMatcher(
-                            secondRegex,
-                            matchContent,
-                            sensitive
-                    );
-                    matches.addAll(formatMatchResults(secondMatcher, format));
-                }
+    // ─── Helpers ───
+
+    private String computeMessageIndex(String host, String message) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            digest.update(host.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) '|');
+
+            int len = message.length();
+            if (len <= HASH_FULL_LIMIT) {
+                digest.update(message.getBytes(StandardCharsets.UTF_8));
+            } else {
+                digest.update(Integer.toString(len).getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) '|');
+                digest.update(message.substring(0, HASH_SAMPLE).getBytes(StandardCharsets.UTF_8));
+                digest.update(message.substring(len - HASH_SAMPLE).getBytes(StandardCharsets.UTF_8));
+            }
+            return HashCalculator.bytesToHex(digest.digest());
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String buildRulesJson() {
+        StringBuilder sb = new StringBuilder("{\"rules\":[");
+        List<String> groupNames = ruleRepository.getAllGroupNames();
+        boolean firstGroup = true;
+
+        for (String groupName : groupNames) {
+            if (!firstGroup) sb.append(',');
+            firstGroup = false;
+
+            sb.append("{\"group\":\"").append(jsonEscape(groupName)).append("\",\"rule\":[");
+            List<RuleDefinition> rules = ruleRepository.getRulesByGroup(groupName);
+            boolean firstRule = true;
+
+            for (RuleDefinition rule : rules) {
+                if (!firstRule) sb.append(',');
+                firstRule = false;
+
+                sb.append("{\"name\":\"").append(jsonEscape(rule.getName())).append('"');
+                sb.append(",\"loaded\":").append(rule.isLoaded());
+                sb.append(",\"f_regex\":\"").append(jsonEscape(rule.getFirstRegex())).append('"');
+                sb.append(",\"s_regex\":\"").append(jsonEscape(rule.getSecondRegex())).append('"');
+                sb.append(",\"format\":\"").append(jsonEscape(rule.getFormat())).append('"');
+                sb.append(",\"color\":\"").append(jsonEscape(rule.getColor())).append('"');
+                sb.append(",\"scope\":\"").append(jsonEscape(rule.getScope())).append('"');
+                sb.append(",\"engine\":\"").append(jsonEscape(rule.getEngine())).append('"');
+                sb.append(",\"sensitive\":").append(rule.isSensitive());
+                sb.append('}');
+            }
+            sb.append("]}");
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private static String jsonEscape(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default: sb.append(c);
             }
         }
-        return matches;
-    }
-
-    private List<String> extractRegexMatchResults(
-            String secondRegex,
-            AutomatonMatcher autoMatcher,
-            String content
-    ) {
-        List<String> matches = new ArrayList<>();
-        if (secondRegex.isEmpty()) {
-            matches.addAll(formatMatchResults(autoMatcher, content));
-        } else {
-            while (autoMatcher.find()) {
-                String s = autoMatcher.group();
-                if (!s.isEmpty()) {
-                    autoMatcher = createAutomatonMatcher(
-                            secondRegex,
-                            extractMatchedContent(content, s)
-                    );
-                    matches.addAll(formatMatchResults(autoMatcher, content));
-                }
-            }
-        }
-        return matches;
-    }
-
-    private List<String> formatMatchResults(Matcher matcher, String format) {
-        List<String> stringList = new ArrayList<>();
-
-        // 当format为{0}时，直接返回第一个捕获组，避免格式化开销
-        if ("{0}".equals(format)) {
-            while (matcher.find()) {
-                if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
-                    stringList.add(matcher.group(1));
-                }
-            }
-            return stringList;
-        }
-
-        // 需要复杂格式化的情况
-        List<Integer> indexList = parseIndexesFromString(format);
-        while (matcher.find()) {
-            if (!matcher.group(1).isEmpty()) {
-                Object[] params = indexList
-                        .stream()
-                        .map(i -> {
-                            if (!matcher.group(i + 1).isEmpty()) {
-                                return matcher.group(i + 1);
-                            }
-                            return "";
-                        })
-                        .toArray();
-
-                stringList.add(
-                        MessageFormat.format(normalizeFormatIndexes(format), params)
-                );
-            }
-        }
-
-        return stringList;
-    }
-
-    private List<String> formatMatchResults(
-            AutomatonMatcher matcher,
-            String content
-    ) {
-        List<String> stringList = new ArrayList<>();
-
-        while (matcher.find()) {
-            String s = matcher.group(0);
-            if (!s.isEmpty()) {
-                stringList.add(extractMatchedContent(content, s));
-            }
-        }
-
-        return stringList;
-    }
-
-    private Matcher createPatternMatcher(
-            String regex,
-            String content,
-            boolean sensitive
-    ) {
-        String cacheKey = regex + "|" + sensitive;
-        Pattern pattern = nfaPatternCache.computeIfAbsent(cacheKey, k -> {
-            int flags = sensitive ? 0 : Pattern.CASE_INSENSITIVE;
-            return Pattern.compile(regex, flags);
-        });
-
-        return pattern.matcher(content);
-    }
-
-    private AutomatonMatcher createAutomatonMatcher(
-            String regex,
-            String content
-    ) {
-        RunAutomaton runAuto = dfaAutomatonCache.computeIfAbsent(regex, k -> {
-            RegExp regexp = new RegExp(regex);
-            Automaton auto = regexp.toAutomaton();
-            return new RunAutomaton(auto, true);
-        });
-
-        return runAuto.newMatcher(content);
-    }
-
-    private LinkedList<Integer> parseIndexesFromString(String input) {
-        LinkedList<Integer> indexes = new LinkedList<>();
-        Matcher matcher = formatIndexPattern.matcher(input);
-
-        while (matcher.find()) {
-            String index = matcher.group(1);
-            if (!index.isEmpty()) {
-                indexes.add(Integer.valueOf(index));
-            }
-        }
-
-        return indexes;
-    }
-
-    private String extractMatchedContent(String content, String s) {
-        byte[] contentByte = api
-                .utilities()
-                .byteUtils()
-                .convertFromString(content);
-        byte[] sByte = api.utilities().byteUtils().convertFromString(s);
-        int startIndex = api
-                .utilities()
-                .byteUtils()
-                .indexOf(contentByte, sByte, false, 1, contentByte.length);
-        int endIndex = startIndex + s.length();
-
-        return content.substring(startIndex, endIndex);
-    }
-
-    private String normalizeFormatIndexes(String format) {
-        Matcher matcher = formatIndexPattern.matcher(format);
-        int count = 0;
-        while (matcher.find()) {
-            String newStr = String.format("{%s}", count);
-            String matchStr = matcher.group(0);
-            format = format.replace(matchStr, newStr);
-            count++;
-        }
-
-        return format;
+        return sb.toString();
     }
 }

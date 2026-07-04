@@ -23,6 +23,8 @@ dependencies {
     implementation 'dk.brics.automaton:automaton:1.11-8'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
     implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'net.java.dev.jna:jna:5.16.0'
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
 }
 
 test {
@@ -34,5 +36,10 @@ jar {
 
     from {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+
+    // Bundle platform-specific native libraries for JNA auto-extraction
+    from('natives') {
+        into '.'
     }
 }
