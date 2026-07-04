@@ -8,9 +8,8 @@ on:
 permissions:
   contents: write
 
-defaults:
-  run:
-    working-directory: src/HaENet/sources
+env:
+  HAE_DIR: src/HaENet/sources
 
 jobs:
   build:
@@ -29,46 +28,35 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mkdir -p $HAE_DIR/natives
           gh release download --repo chainreactors/proton --pattern 'proton-natives.tar.gz' --dir /tmp
-          mkdir -p natives
-          tar xzf /tmp/proton-natives.tar.gz -C natives/
-          ls -lhR natives/
+          tar xzf /tmp/proton-natives.tar.gz -C $HAE_DIR/natives/
+          ls -lhR $HAE_DIR/natives/
 
-      - name: Download proton-hae SDK
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Build proton-hae SDK from source
         run: |
-          mkdir -p libs
-          # Get the latest HaE SDK release JAR (standalone, no natives bundled)
-          LATEST_TAG=$(gh release list --repo chainreactors/proton --limit 10 --json tagName --jq '[.[] | select(.tagName | startswith("hae-"))][0].tagName')
-          if [ -n "$LATEST_TAG" ]; then
-            VERSION=$(echo $LATEST_TAG | sed 's/hae-v\([^-]*\)-.*/\1/')
-            gh release download "$LATEST_TAG" --repo chainreactors/proton --pattern "proton-hae-${VERSION}.jar" --dir libs/ || true
-          fi
-          # Fallback: build SDK from proton source
-          if [ ! -f libs/proton-hae-*.jar ]; then
-            echo "SDK JAR not found in releases, building from source..."
-            cd ${{ github.workspace }}
-            git clone --depth 1 https://github.com/chainreactors/proton /tmp/proton
-            cd /tmp/proton/sdk/java/proton-hae
-            mvn package -q
-            cp target/proton-hae-*.jar ${{ github.workspace }}/src/HaENet/sources/libs/
-          fi
-          ls -lh libs/
+          git clone --depth 1 https://github.com/chainreactors/proton /tmp/proton
+          cd /tmp/proton/sdk/java/proton-hae
+          mvn package -q -DskipTests
+          mkdir -p $GITHUB_WORKSPACE/$HAE_DIR/libs
+          cp target/proton-hae-*.jar $GITHUB_WORKSPACE/$HAE_DIR/libs/
+          ls -lh $GITHUB_WORKSPACE/$HAE_DIR/libs/
 
-      - name: Build
+      - name: Build HaE JAR
+        working-directory: ${{ env.HAE_DIR }}
         run: gradle jar
 
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
           name: HaE-proton
-          path: src/HaENet/sources/build/libs/*.jar
+          path: ${{ env.HAE_DIR }}/build/libs/*.jar
 
       - name: Release
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
+        working-directory: ${{ env.HAE_DIR }}
         run: |
           JAR=$(ls build/libs/*.jar | head -1)
           TAG="v$(date +%Y%m%d)-$(echo ${{ github.sha }} | cut -c1-7)"
