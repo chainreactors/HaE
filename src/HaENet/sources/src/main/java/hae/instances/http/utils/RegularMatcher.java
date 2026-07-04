@@ -4,6 +4,7 @@ import burp.api.montoya.MontoyaApi;
 import com.chainreactors.proton.hae.ProtonHaEEngine;
 import com.chainreactors.proton.hae.model.MatchResult;
 import hae.cache.DataCache;
+import hae.engine.FingersEngine;
 import hae.repository.DataRepository;
 import hae.repository.RuleRepository;
 import hae.service.ValidatorService;
@@ -21,12 +22,17 @@ public class RegularMatcher {
     private static final int HASH_FULL_LIMIT = 2 * 1024 * 1024;
     private static final int HASH_SAMPLE = 64 * 1024;
 
+    private static final Set<String> FINGERPRINT_CONTENT_TYPES = Set.of(
+            "text/html", "application/xhtml+xml", "application/xhtml"
+    );
+
     private final MontoyaApi api;
     private final ConfigLoader configLoader;
     private final DataRepository dataRepository;
     private final RuleRepository ruleRepository;
 
     private volatile ProtonHaEEngine protonEngine;
+    private volatile FingersEngine fingersEngine;
 
     public RegularMatcher(
             MontoyaApi api,
@@ -40,6 +46,7 @@ public class RegularMatcher {
         this.ruleRepository = ruleRepository;
 
         initProtonEngine();
+        initFingersEngine();
     }
 
     private void initProtonEngine() {
@@ -53,6 +60,16 @@ public class RegularMatcher {
         } catch (Exception e) {
             api.logging().logToError("[!] Proton engine not available, falling back to Java regex: " + e.getMessage());
             protonEngine = null;
+        }
+    }
+
+    private void initFingersEngine() {
+        try {
+            fingersEngine = new FingersEngine();
+            api.logging().logToOutput("[*] Fingers engine loaded");
+        } catch (Exception e) {
+            api.logging().logToError("[!] Fingers engine not available: " + e.getMessage());
+            fingersEngine = null;
         }
     }
 
@@ -109,8 +126,62 @@ public class RegularMatcher {
             finalMap = applyMatchingRules(host, url, type, originalMessage, firstLine, header, body, persist);
         }
 
+        // Fingers: only on response with HTML content-type
+        if ("response".equals(type) || "any".equals(type)) {
+            if (shouldRunFingers(header)) {
+                appendFingersResults(finalMap, originalMessage, host, url, persist);
+            }
+        }
+
         DataCache.put(messageIndex, finalMap);
         return finalMap;
+    }
+
+    private boolean shouldRunFingers(String header) {
+        if (fingersEngine == null || !fingersEngine.isLoaded()) return false;
+        String lower = header.toLowerCase();
+        int ct = lower.indexOf("content-type:");
+        if (ct < 0) return true; // no content-type → try fingerprinting
+        int end = lower.indexOf('\n', ct);
+        if (end < 0) end = lower.length();
+        String ctValue = lower.substring(ct + 13, end).trim();
+        for (String allowed : FINGERPRINT_CONTENT_TYPES) {
+            if (ctValue.contains(allowed)) return true;
+        }
+        return false;
+    }
+
+    private void appendFingersResults(
+            Map<String, Map<String, Object>> finalMap,
+            String rawMessage,
+            String host,
+            String url,
+            boolean persist
+    ) {
+        try {
+            List<FingersEngine.Framework> frameworks = fingersEngine.detect(
+                    rawMessage.getBytes(StandardCharsets.UTF_8)
+            );
+            if (frameworks.isEmpty()) return;
+
+            List<String> names = new ArrayList<>();
+            for (FingersEngine.Framework fw : frameworks) {
+                names.add(fw.toString());
+            }
+
+            Map<String, Object> tmpMap = new HashMap<>();
+            tmpMap.put("color", "blue");
+            tmpMap.put("data", String.join(hae.AppConstants.boundary, names));
+
+            String key = String.format("[Fingers] (%d)", names.size());
+            finalMap.put(key, tmpMap);
+
+            if (persist) {
+                dataRepository.mergeData(host, "[Fingers]", names, true);
+            }
+        } catch (Exception e) {
+            api.logging().logToError("[!] Fingers detect error: " + e.getMessage());
+        }
     }
 
     private Map<String, Map<String, Object>> matchWithProton(
@@ -272,17 +343,9 @@ public class RegularMatcher {
         java.util.regex.Matcher matcher = pattern.matcher(content);
 
         if (secondRegex.isEmpty()) {
-            if ("{0}".equals(format)) {
-                while (matcher.find()) {
-                    if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
-                        retList.add(matcher.group(1));
-                    }
-                }
-            } else {
-                while (matcher.find()) {
-                    if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
-                        retList.add(matcher.group(1));
-                    }
+            while (matcher.find()) {
+                if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
+                    retList.add(matcher.group(1));
                 }
             }
         } else {
