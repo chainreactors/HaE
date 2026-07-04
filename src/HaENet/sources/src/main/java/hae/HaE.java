@@ -35,6 +35,7 @@ public class HaE implements BurpExtension {
                 "[#] Author: EvilChen && 0chencc && vaycore && MingXi"
         );
         logging.logToOutput("[#] Github: https://github.com/gh0stkey/HaE");
+        logging.logToOutput("[#] Match Engine Powered By Proton: https://github.com/chainreactors/proton");
         logging.logToOutput("[#] Version: " + version);
 
         // 配置文件加载
