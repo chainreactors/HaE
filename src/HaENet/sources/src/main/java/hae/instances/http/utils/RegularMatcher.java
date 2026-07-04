@@ -325,7 +325,7 @@ public class RegularMatcher {
 
     private String buildRulesJson() {
         StringBuilder sb = new StringBuilder("{\"rules\":[");
-        List<String> groupNames = ruleRepository.getAllGroupNames();
+        Set<String> groupNames = ruleRepository.getAllGroupNames();
         boolean firstGroup = true;
 
         for (String groupName : groupNames) {
