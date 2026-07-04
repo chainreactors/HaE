@@ -33,15 +33,75 @@ test {
     useJUnitPlatform()
 }
 
+// JNA platforms to keep (strip all others to reduce JAR size)
+def jnaPlatforms = ['linux-x86-64', 'linux-aarch64', 'win32-x86-64', 'darwin-x86-64', 'darwin-aarch64']
+
 jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+        configurations.runtimeClasspath.collect {
+            if (it.isDirectory()) {
+                it
+            } else {
+                zipTree(it).matching {
+                    // Strip unused JNA native platforms
+                    if (it.name.contains('jna')) {
+                        exclude { element ->
+                            def path = element.relativePath.pathString
+                            if (path.startsWith('com/sun/jna/') && path.contains('/libjnidispatch') || path.contains('/jnidispatch.dll')) {
+                                def platform = path.split('/')[3]
+                                return !jnaPlatforms.contains(platform)
+                            }
+                            return false
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    // Bundle platform-specific native libraries for JNA auto-extraction
+    // Bundle proton native libraries
     from('natives') {
         into '.'
     }
+}
+
+// Per-platform standalone JARs
+['linux-x86-64', 'linux-aarch64', 'win32-x86-64', 'darwin-x86-64', 'darwin-aarch64'].each { platform ->
+    tasks.register("jar-${platform}", Jar) {
+        archiveClassifier = platform
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+        from sourceSets.main.output
+
+        from {
+            configurations.runtimeClasspath.collect {
+                if (it.isDirectory()) {
+                    it
+                } else {
+                    zipTree(it).matching {
+                        if (it.name.contains('jna')) {
+                            exclude { element ->
+                                def path = element.relativePath.pathString
+                                if (path.startsWith('com/sun/jna/') && (path.contains('/libjnidispatch') || path.contains('/jnidispatch.dll'))) {
+                                    def p = path.split('/')[3]
+                                    return p != platform
+                                }
+                                return false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        from("natives/${platform}") {
+            into platform
+        }
+    }
+}
+
+tasks.register('jarAll') {
+    dependsOn 'jar', 'jar-linux-x86-64', 'jar-linux-aarch64', 'jar-win32-x86-64', 'jar-darwin-x86-64', 'jar-darwin-aarch64'
 }

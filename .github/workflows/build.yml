@@ -33,7 +33,7 @@ jobs:
           tar xzf /tmp/proton-natives.tar.gz -C $HAE_DIR/natives/
           ls -lhR $HAE_DIR/natives/
 
-      - name: Build proton-hae SDK from source
+      - name: Build proton-hae SDK
         run: |
           git clone --depth 1 https://github.com/chainreactors/proton /tmp/proton
           cd /tmp/proton/sdk/java/proton-hae
@@ -42,14 +42,17 @@ jobs:
           cp target/proton-hae-*.jar $GITHUB_WORKSPACE/$HAE_DIR/libs/
           ls -lh $GITHUB_WORKSPACE/$HAE_DIR/libs/
 
-      - name: Build HaE JAR
+      - name: Build all JARs
         working-directory: ${{ env.HAE_DIR }}
-        run: gradle jar
+        run: gradle jarAll
 
-      - name: Upload JAR
-        uses: actions/upload-artifact@v4
+      - name: List artifacts
+        working-directory: ${{ env.HAE_DIR }}
+        run: ls -lh build/libs/*.jar
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: HaE-proton
+          name: HaE-jars
           path: ${{ env.HAE_DIR }}/build/libs/*.jar
 
       - name: Release
@@ -58,9 +61,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         working-directory: ${{ env.HAE_DIR }}
         run: |
-          JAR=$(ls build/libs/*.jar | head -1)
           TAG="v$(date +%Y%m%d)-$(echo ${{ github.sha }} | cut -c1-7)"
           gh release create "$TAG" \
             --title "HaE with Proton Engine $TAG" \
-            --notes "HaE Burp extension with Proton regex engine" \
-            "$JAR"
+            --notes "$(cat <<'NOTES'
+          HaE Burp extension with Proton regex engine.
+
+          | File | Description |
+          |------|-------------|
+          | `HaE.jar` | Fat JAR — all platforms (Linux/Windows/macOS) |
+          | `HaE-linux-x86-64.jar` | Standalone — Linux amd64 |
+          | `HaE-linux-aarch64.jar` | Standalone — Linux arm64 |
+          | `HaE-win32-x86-64.jar` | Standalone — Windows amd64 |
+          | `HaE-darwin-x86-64.jar` | Standalone — macOS Intel |
+          | `HaE-darwin-aarch64.jar` | Standalone — macOS Apple Silicon |
+          NOTES
+          )" \
+            build/libs/HaE.jar \
+            build/libs/HaE-linux-x86-64.jar \
+            build/libs/HaE-linux-aarch64.jar \
+            build/libs/HaE-win32-x86-64.jar \
+            build/libs/HaE-darwin-x86-64.jar \
+            build/libs/HaE-darwin-aarch64.jar
