@@ -1,0 +1,30 @@
+id: hae-internal-ip-address
+
+info:
+  name: Internal IP Address
+  severity: info
+  description: Detect internal/private IP addresses (RFC1918)
+  tags: hae, basic-info
+  metadata:
+    color: cyan
+    scope: response
+    engine: nfa
+    sensitive: true
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    matchers:
+      - type: word
+        words:
+          - '127.0.0.1'
+          - '10.'
+          - '172.'
+          - '192.168.'
+        condition: or
+    extractors:
+      - type: regex
+        name: internal-ip-address
+        regex:
+          - '[^0-9]((127\.0\.0\.1)|(10\.\d{1,3}\.\d{1,3}\.\d{1,3})|(172\.((1[6-9])|(2\d)|(3[01]))\.\d{1,3}\.\d{1,3})|(192\.168\.\d{1,3}\.\d{1,3}))'

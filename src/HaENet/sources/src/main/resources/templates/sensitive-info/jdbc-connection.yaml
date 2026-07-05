@@ -1,0 +1,27 @@
+id: hae-jdbc-connection
+
+info:
+  name: JDBC Connection
+  severity: medium
+  description: Extract JDBC database connection strings
+  tags: hae, sensitive-info
+  metadata:
+    color: yellow
+    scope: any
+    engine: nfa
+    sensitive: false
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    matchers:
+      - type: word
+        words:
+          - 'jdbc:'
+        case-insensitive: true
+    extractors:
+      - type: regex
+        name: jdbc-connection
+        regex:
+          - '(?i)(jdbc:[a-z:]+://[a-z0-9\.\-_:;=/@?,&]+)'

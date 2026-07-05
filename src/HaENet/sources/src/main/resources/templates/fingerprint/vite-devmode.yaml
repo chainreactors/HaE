@@ -1,0 +1,26 @@
+id: hae-vite-devmode
+
+info:
+  name: Vite DevMode
+  severity: critical
+  description: Detect Vite development mode client
+  tags: hae, fingerprint
+  metadata:
+    color: red
+    scope: response body
+    engine: dfa
+    sensitive: true
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    matchers:
+      - type: word
+        words:
+          - '@vite/client'
+    extractors:
+      - type: regex
+        name: vite-devmode
+        regex:
+          - '(/\@vite/client)'

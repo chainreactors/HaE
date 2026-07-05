@@ -1,0 +1,32 @@
+id: hae-swagger-ui
+
+info:
+  name: Swagger UI
+  severity: critical
+  description: Detect Swagger UI API documentation endpoints
+  tags: hae, fingerprint
+  metadata:
+    color: red
+    scope: response body
+    engine: dfa
+    sensitive: false
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    matchers:
+      - type: word
+        words:
+          - 'swagger-ui.html'
+          - 'swagger'
+          - 'Swagger UI'
+          - 'swaggerUi'
+          - 'swaggerVersion'
+        condition: or
+        case-insensitive: true
+    extractors:
+      - type: regex
+        name: swagger-ui
+        regex:
+          - '(?i)((swagger-ui.html)|("swagger":)|(Swagger UI)|(swaggerUi)|(swaggerVersion))'

@@ -1,0 +1,26 @@
+id: hae-userinfo-in-link
+
+info:
+  name: Userinfo In Link
+  severity: low
+  description: Extract URLs containing credential parameters
+  tags: hae, sensitive-info
+  metadata:
+    color: green
+    scope: response body
+    engine: nfa
+    sensitive: false
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    extractors:
+      - type: regex
+        name: userinfo-in-link
+        regex:
+          - "(?i)(?:\"|'|`)(((?:[a-zA-Z]{1,10}://|//)[^\"'/]{1,}\\.[a-zA-Z]{2,}[^\"']{0,})|((?:/|\\.\\./|\\./)[ ^\"'><,;|*()(%%$^/\\\\\\[\\]][^\"'><,;|()]{1,})|([a-zA-Z0-9_\\-/]{1,}/[a-zA-Z0-9_\\-/]{1,}\\.(?:[a-zA-Z]{1,4}|action)(?:[\\?|#][^\"|']{0,}|))|([a-zA-Z0-9_\\-/]{1,}/[a-zA-Z0-9_\\-/]{3,}(?:[\\?|#][^\"|']{0,}|))|([a-zA-Z0-9_\\-]{1,}\\.(?:\\w)(?:[\\?|#][^\"|']{0,}|)))(?:\"|'|`)"
+    matchers:
+      - type: regex
+        regex:
+          - '(?i)((([p](ass|wd|asswd|assword))|(([u](ser|name|sername))|(account)|((((create|update)((d|r)|(by|on|at)))|(creator)))))=[\.\w]{1,32})'

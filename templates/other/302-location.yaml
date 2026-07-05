@@ -1,0 +1,26 @@
+id: hae-302-location
+
+info:
+  name: 302 Location
+  severity: info
+  description: Extract redirect Location header values
+  tags: hae, other
+  metadata:
+    color: gray
+    scope: response header
+    engine: nfa
+    sensitive: false
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    matchers:
+      - type: word
+        words:
+          - 'Location:'
+    extractors:
+      - type: regex
+        name: 302-location
+        regex:
+          - 'Location: ([^\r\n]*)'
