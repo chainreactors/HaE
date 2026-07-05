@@ -1,0 +1,22 @@
+id: hae-mac-address
+
+info:
+  name: MAC Address
+  severity: low
+  description: Extract MAC hardware addresses
+  tags: hae, basic-info
+  metadata:
+    color: green
+    scope: response
+    engine: nfa
+    sensitive: true
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    extractors:
+      - type: regex
+        name: mac-address
+        regex:
+          - '(^([a-fA-F0-9]{2}(:[a-fA-F0-9]{2}){5})|[^a-zA-Z0-9]([a-fA-F0-9]{2}(:[a-fA-F0-9]{2}){5}))'

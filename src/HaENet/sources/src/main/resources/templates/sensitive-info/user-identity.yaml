@@ -1,0 +1,30 @@
+id: hae-user-identity
+
+info:
+  name: User Identity
+  severity: low
+  description: Detect client-side identity storage (localStorage, cookies)
+  tags: hae, sensitive-info
+  metadata:
+    color: green
+    scope: response body
+    engine: nfa
+    sensitive: false
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    matchers:
+      - type: word
+        words:
+          - 'localStorage'
+          - 'sessionStorage'
+          - 'setCookie'
+          - 'Cookies.set'
+        condition: or
+    extractors:
+      - type: regex
+        name: user-identity
+        regex:
+          - "(?i)(\\b(?:(localStorage|sessionStorage)\\.(setItem|getItem)|setCookie|Cookies\\.set)\\s*\\(\\s*['\"](.+?)['\"].*?)"

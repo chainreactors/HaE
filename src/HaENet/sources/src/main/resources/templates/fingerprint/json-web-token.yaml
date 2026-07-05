@@ -1,0 +1,26 @@
+id: hae-json-web-token
+
+info:
+  name: JSON Web Token
+  severity: low
+  description: Detect JSON Web Tokens in HTTP traffic
+  tags: hae, fingerprint
+  metadata:
+    color: green
+    scope: any
+    engine: nfa
+    sensitive: true
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    matchers:
+      - type: word
+        words:
+          - 'eyJ'
+    extractors:
+      - type: regex
+        name: jwt
+        regex:
+          - '(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,}|eyJ[A-Za-z0-9_\/+-]{10,}\.[A-Za-z0-9._\/+-]{10,})'

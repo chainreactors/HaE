@@ -1,0 +1,28 @@
+id: hae-shiro
+
+info:
+  name: Shiro
+  severity: low
+  description: Detect Apache Shiro framework cookie markers
+  tags: hae, fingerprint
+  metadata:
+    color: green
+    scope: any header
+    engine: dfa
+    sensitive: true
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    matchers:
+      - type: word
+        words:
+          - 'deleteMe'
+          - 'rememberMe'
+        condition: or
+    extractors:
+      - type: regex
+        name: shiro
+        regex:
+          - '(=deleteMe|rememberMe=)'

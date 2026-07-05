@@ -1,0 +1,26 @@
+id: hae-email
+
+info:
+  name: Email
+  severity: medium
+  description: Extract email addresses, filtering out image file references
+  tags: hae, basic-info
+  metadata:
+    color: yellow
+    scope: response
+    engine: nfa
+    sensitive: false
+    loaded: true
+
+file:
+  - extensions:
+      - all
+    extractors:
+      - type: regex
+        name: email
+        regex:
+          - '(?i)(\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,5}\b)'
+    matchers:
+      - type: regex
+        regex:
+          - '^((?!.*\.(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico?)$).*@.*\..*)$'
