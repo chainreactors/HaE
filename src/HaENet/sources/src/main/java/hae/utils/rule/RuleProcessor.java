@@ -5,22 +5,16 @@ import hae.AppConstants;
 import hae.cache.DataCache;
 import hae.repository.RuleRepository;
 import hae.utils.ConfigLoader;
-import hae.utils.rule.model.Group;
 import hae.utils.rule.model.RuleDefinition;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.representer.Representer;
 
 import java.io.File;
-import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.*;
 
 public class RuleProcessor {
     private final MontoyaApi api;
@@ -36,30 +30,54 @@ public class RuleProcessor {
     public void rulesFormatAndSave() {
         DataCache.clear();
 
+        String templatesPath = configLoader.getTemplatesPath();
+        File templatesDir = new File(templatesPath);
+        if (!templatesDir.exists()) {
+            templatesDir.mkdirs();
+        }
+        saveAsTemplates(templatesDir);
+    }
+
+    private void saveAsTemplates(File templatesDir) {
         DumperOptions dop = new DumperOptions();
         dop.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         Representer representer = new Representer(dop);
         Yaml yaml = new Yaml(representer, dop);
 
-        List<Group> ruleGroupList = new ArrayList<>();
+        Set<String> writtenFiles = new java.util.HashSet<>();
 
-        ruleRepository.getAll().forEach((k, v) ->
-                ruleGroupList.add(new Group(k, v))
-        );
+        ruleRepository.getAll().forEach((groupName, rules) -> {
+            String dirName = ConfigLoader.groupNameToDir(groupName);
+            File groupDir = new File(templatesDir, dirName);
+            if (!groupDir.exists()) {
+                groupDir.mkdirs();
+            }
 
-        List<Map<String, Object>> outputGroupsMap = ruleGroupList.stream()
-                .map(Group::getFields)
-                .collect(Collectors.toList());
+            for (RuleDefinition rule : rules) {
+                Map<String, Object> tmpl = rule.toTemplateYaml(groupName);
+                String fileName = slugify(rule.getName()) + ".yaml";
+                File targetFile = new File(groupDir, fileName);
+                writtenFiles.add(targetFile.getAbsolutePath());
 
-        Map<String, Object> outputMap = new LinkedHashMap<>();
-        outputMap.put("rules", outputGroupsMap);
+                try (Writer writer = new java.io.OutputStreamWriter(
+                        Files.newOutputStream(targetFile.toPath()), StandardCharsets.UTF_8)) {
+                    yaml.dump(tmpl, writer);
+                } catch (Exception e) {
+                    api.logging().logToError("Failed to save template " + fileName + ": " + e.getMessage());
+                }
+            }
+        });
+    }
 
-        File rulesFile = new File(configLoader.getRulesFilePath());
-        try (Writer writer = new OutputStreamWriter(Files.newOutputStream(rulesFile.toPath()), StandardCharsets.UTF_8)) {
-            yaml.dump(outputMap, writer);
-        } catch (Exception e) {
-            api.logging().logToError("Failed to save rules file: " + e.getMessage());
+    private static String slugify(String s) {
+        if (s == null) return "unknown";
+        StringBuilder sb = new StringBuilder(s.length());
+        for (char c : s.toCharArray()) {
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') sb.append(c);
+            else if (c >= 'A' && c <= 'Z') sb.append((char) (c + 32));
+            else sb.append('-');
         }
+        return sb.toString();
     }
 
     public void changeRule(RuleDefinition rule, int select, String type) {

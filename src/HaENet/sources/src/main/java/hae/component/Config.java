@@ -468,7 +468,7 @@ public class Config extends JPanel {
                 JOptionPane.YES_NO_OPTION
         );
         if (retCode == JOptionPane.YES_OPTION) {
-            boolean ret = configLoader.initRules();
+            boolean ret = configLoader.initTemplates();
             if (ret) {
                 rules.reloadRuleGroup();
             }
