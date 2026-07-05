@@ -21,7 +21,7 @@ public class ConfigLoader {
     private final MontoyaApi api;
     private final Yaml yaml;
     private final String configFilePath;
-    private final String rulesFilePath;
+    private final String templatesPath;
     private volatile Map<String, Object> configCache;
 
     public ConfigLoader(MontoyaApi api) {
@@ -30,7 +30,7 @@ public class ConfigLoader {
 
         String configPath = determineConfigPath();
         this.configFilePath = String.format("%s/%s", configPath, "Config.yml");
-        this.rulesFilePath = String.format("%s/%s", configPath, "Rules.yml");
+        this.templatesPath = String.format("%s/%s", configPath, "templates");
 
         // 构造函数，初始化配置
         File configDir = new File(configPath);
@@ -43,9 +43,9 @@ public class ConfigLoader {
             initConfig();
         }
 
-        File rulesFilePath = new File(this.rulesFilePath);
-        if (!(rulesFilePath.exists() && rulesFilePath.isFile())) {
-            initRules();
+        File templatesDir = new File(this.templatesPath);
+        if (!(templatesDir.exists() && templatesDir.isDirectory())) {
+            initTemplates();
         }
     }
 
@@ -118,47 +118,83 @@ public class ConfigLoader {
     }
 
     public String getRulesFilePath() {
-        return rulesFilePath;
+        return templatesPath;
     }
 
-    // 获取规则配置
+    public String getTemplatesPath() {
+        return templatesPath;
+    }
+
     public Map<String, List<RuleDefinition>> getRules() {
-        Map<String, List<RuleDefinition>> rules = new HashMap<>();
+        File templatesDir = new File(templatesPath);
+        if (!templatesDir.exists()) {
+            templatesDir.mkdirs();
+        }
+        return loadRulesFromTemplates(templatesDir);
+    }
 
-        try {
-            InputStream inputStream = Files.newInputStream(
-                    Paths.get(getRulesFilePath())
-            );
-            Map<String, Object> rulesMap = yaml.load(inputStream);
+    private Map<String, List<RuleDefinition>> loadRulesFromTemplates(File templatesDir) {
+        Map<String, List<RuleDefinition>> rules = new LinkedHashMap<>();
 
-            Object rulesObj = rulesMap.get("rules");
-            if (rulesObj instanceof List) {
-                List<Map<String, Object>> groupData = (List<
-                        Map<String, Object>
-                        >) rulesObj;
-                for (Map<String, Object> groupFields : groupData) {
-                    List<RuleDefinition> data = new ArrayList<>();
+        File[] groupDirs = templatesDir.listFiles(File::isDirectory);
+        if (groupDirs == null) return rules;
 
-                    Object ruleObj = groupFields.get("rule");
-                    if (ruleObj instanceof List) {
-                        List<Map<String, Object>> ruleData = (List<
-                                Map<String, Object>
-                                >) ruleObj;
-                        for (Map<String, Object> ruleFields : ruleData) {
-                            data.add(RuleDefinition.fromYamlMap(ruleFields));
-                        }
+        for (File groupDir : groupDirs) {
+            String groupName = groupDirToName(groupDir.getName());
+            List<RuleDefinition> groupRules = new ArrayList<>();
+
+            File[] yamlFiles = groupDir.listFiles(f -> f.getName().endsWith(".yaml") || f.getName().endsWith(".yml"));
+            if (yamlFiles == null) continue;
+
+            for (File yamlFile : yamlFiles) {
+                try (InputStream in = Files.newInputStream(yamlFile.toPath())) {
+                    Map<String, Object> tmpl = yaml.load(in);
+                    if (tmpl != null && tmpl.containsKey("file")) {
+                        groupRules.add(RuleDefinition.fromTemplateYaml(tmpl, groupName));
                     }
-
-                    rules.put(groupFields.get("group").toString(), data);
+                } catch (Exception e) {
+                    api.logging().logToError("Failed to load template " + yamlFile.getName() + ": " + e.getMessage());
                 }
             }
 
-            return rules;
-        } catch (Exception e) {
-            api.logging().logToError("Failed to load rules: " + e.getMessage());
+            if (!groupRules.isEmpty()) {
+                rules.put(groupName, groupRules);
+            }
         }
 
         return rules;
+    }
+
+    private static String groupDirToName(String dirName) {
+        switch (dirName) {
+            case "fingerprint": return "Fingerprint";
+            case "vulnerability": return "Maybe Vulnerability";
+            case "basic-info": return "Basic Information";
+            case "sensitive-info": return "Sensitive Information";
+            case "other": return "Other";
+            default:
+                StringBuilder sb = new StringBuilder();
+                for (String part : dirName.split("-")) {
+                    if (!part.isEmpty()) {
+                        sb.append(Character.toUpperCase(part.charAt(0)));
+                        sb.append(part.substring(1));
+                        sb.append(' ');
+                    }
+                }
+                return sb.toString().trim();
+        }
+    }
+
+    public static String groupNameToDir(String groupName) {
+        switch (groupName) {
+            case "Fingerprint": return "fingerprint";
+            case "Maybe Vulnerability": return "vulnerability";
+            case "Basic Information": return "basic-info";
+            case "Sensitive Information": return "sensitive-info";
+            case "Other": return "other";
+            default:
+                return groupName.toLowerCase().replace(' ', '-');
+        }
     }
 
     public String getBlockHost() {
@@ -277,40 +313,47 @@ public class ConfigLoader {
         }
     }
 
-    public boolean initRules() {
-        boolean ret = copyRulesToFile(this.rulesFilePath);
-        if (!ret) {
-            api.extension().unload();
-        }
-        return ret;
-    }
+    public boolean initTemplates() {
+        String[] groups = {"fingerprint", "vulnerability", "basic-info", "sensitive-info", "other"};
+        boolean success = true;
 
-    private boolean copyRulesToFile(String targetFilePath) {
-        InputStream inputStream = getClass()
-                .getClassLoader()
-                .getResourceAsStream("rules/Rules.yml");
-        File targetFile = new File(targetFilePath);
-
-        try (
-                inputStream;
-                OutputStream outputStream = new FileOutputStream(targetFile)
-        ) {
-            if (inputStream != null) {
-                byte[] buffer = new byte[1024];
-                int length;
-
-                while ((length = inputStream.read(buffer)) > 0) {
-                    outputStream.write(buffer, 0, length);
-                }
-
-                return true;
+        for (String group : groups) {
+            File groupDir = new File(templatesPath, group);
+            if (!groupDir.exists()) {
+                groupDir.mkdirs();
             }
-        } catch (Exception e) {
-            api
-                    .logging()
-                    .logToError("Failed to copy rules file: " + e.getMessage());
+
+            String resourceBase = "templates/" + group + "/";
+            try {
+                InputStream indexStream = getClass().getClassLoader().getResourceAsStream(resourceBase + "index.txt");
+                if (indexStream == null) continue;
+
+                String content = new String(indexStream.readAllBytes(), StandardCharsets.UTF_8);
+                for (String fileName : content.split("\n")) {
+                    fileName = fileName.trim();
+                    if (fileName.isEmpty()) continue;
+
+                    InputStream fileStream = getClass().getClassLoader().getResourceAsStream(resourceBase + fileName);
+                    if (fileStream == null) continue;
+
+                    File target = new File(groupDir, fileName);
+                    try (fileStream; OutputStream out = new FileOutputStream(target)) {
+                        byte[] buffer = new byte[1024];
+                        int len;
+                        while ((len = fileStream.read(buffer)) > 0) {
+                            out.write(buffer, 0, len);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                api.logging().logToError("Failed to init templates for " + group + ": " + e.getMessage());
+                success = false;
+            }
         }
 
-        return false;
+        if (!success) {
+            api.logging().logToError("Template init failed");
+        }
+        return success;
     }
 }
