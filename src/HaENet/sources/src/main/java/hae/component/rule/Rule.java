@@ -99,8 +99,8 @@ public class Rule extends JPanel {
         DefaultTableModel model = new DefaultTableModel() {
             @Override
             public Class<?> getColumnClass(int column) {
-                // 0: Loaded, 8: Sensitive
-                return (column == 0 || column == 8)
+                // 0: Loaded, 7: Sensitive
+                return (column == 0 || column == 7)
                         ? Boolean.class
                         : String.class;
             }
@@ -177,12 +177,6 @@ public class Rule extends JPanel {
                 .getColumn(6)
                 .setCellEditor(
                         new DefaultCellEditor(new JComboBox<>(AppConstants.scope))
-                );
-        ruleTable
-                .getColumnModel()
-                .getColumn(7)
-                .setCellEditor(
-                        new DefaultCellEditor(new JComboBox<>(AppConstants.engine))
                 );
 
         GridBagConstraints constraints = new GridBagConstraints();
@@ -385,20 +379,17 @@ public class Rule extends JPanel {
         ruleDisplay.scopeComboBox.setSelectedItem(
                 model.getValueAt(modelRow, 6).toString()
         );
-        ruleDisplay.engineComboBox.setSelectedItem(
-                model.getValueAt(modelRow, 7).toString()
-        );
         ruleDisplay.sensitiveComboBox.setSelectedItem(
-                model.getValueAt(modelRow, 8)
+                model.getValueAt(modelRow, 7)
         );
         ruleDisplay.validatorTextField.setText(
-                model.getValueAt(modelRow, 9).toString()
+                model.getValueAt(modelRow, 8).toString()
         );
         ruleDisplay.validatorTimeoutTextField.setText(
-                model.getValueAt(modelRow, 10).toString()
+                model.getValueAt(modelRow, 9).toString()
         );
         ruleDisplay.validatorBulkTextField.setText(
-                model.getValueAt(modelRow, 11).toString()
+                model.getValueAt(modelRow, 10).toString()
         );
     }
 
@@ -425,7 +416,6 @@ public class Rule extends JPanel {
                 ruleDisplay.formatTextField.getText(),
                 ruleDisplay.colorComboBox.getSelectedItem().toString(),
                 ruleDisplay.scopeComboBox.getSelectedItem().toString(),
-                ruleDisplay.engineComboBox.getSelectedItem().toString(),
                 (Boolean) ruleDisplay.sensitiveComboBox.getSelectedItem(),
                 ruleDisplay.validatorTextField.getText(),
                 timeout,
@@ -434,12 +424,6 @@ public class Rule extends JPanel {
     }
 
     private boolean showRuleDialog(Display ruleDisplay, String title) {
-        ruleDisplay.formatTextField.setEnabled(
-                ruleDisplay.engineComboBox
-                        .getSelectedItem()
-                        .toString()
-                        .equals("nfa")
-        );
         int showState = JOptionPane.showConfirmDialog(
                 this,
                 ruleDisplay,
@@ -460,8 +444,8 @@ public class Rule extends JPanel {
     private RuleDefinition rowToRuleDefinition(Vector row) {
         int timeout = 0;
         int bulk = 0;
-        Object tObj = row.get(10);
-        Object bObj = row.get(11);
+        Object tObj = row.get(9);
+        Object bObj = row.get(10);
         if (tObj instanceof Number) timeout = ((Number) tObj).intValue();
         else try {
             timeout = Integer.parseInt(tObj.toString().trim());
@@ -480,9 +464,8 @@ public class Rule extends JPanel {
                 (String) row.get(4),
                 (String) row.get(5),
                 (String) row.get(6),
-                (String) row.get(7),
-                (Boolean) row.get(8),
-                (String) row.get(9),
+                (Boolean) row.get(7),
+                (String) row.get(8),
                 timeout,
                 bulk
         );

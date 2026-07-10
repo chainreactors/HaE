@@ -45,7 +45,6 @@ public class AppConstants {
             "Format",
             "Color",
             "Scope",
-            "Engine",
             "Sensitive",
             "Validator",
             "V-Timeout",
@@ -61,15 +60,12 @@ public class AppConstants {
                     "{0}",
                     "gray",
                     "any",
-                    "nfa",
                     false,
                     "",
                     5000,
                     500
             )
     );
-
-    public static final String[] engine = new String[]{"nfa", "dfa"};
 
     public static final String[] color = new String[]{
             "red",

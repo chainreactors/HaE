@@ -179,7 +179,6 @@ public class RegularMatcher {
                         String name = rule.getName();
                         String firstRegex = rule.getFirstRegex();
                         String secondRegex = rule.getSecondRegex();
-                        String format = rule.getFormat();
                         String color = rule.getColor();
                         String scope = rule.getScope();
                         boolean sensitive = rule.isSensitive();
@@ -220,7 +219,7 @@ public class RegularMatcher {
 
                             try {
                                 result = new ArrayList<>(
-                                        javaRegexMatch(firstRegex, secondRegex, matchContent, format, sensitive)
+                                        javaRegexMatch(firstRegex, secondRegex, matchContent, sensitive)
                                 );
                             } catch (Exception e) {
                                 api.logging().logToError(
@@ -258,7 +257,7 @@ public class RegularMatcher {
 
     private List<String> javaRegexMatch(
             String firstRegex, String secondRegex, String content,
-            String format, boolean sensitive
+            boolean sensitive
     ) {
         List<String> retList = new ArrayList<>();
         int flags = sensitive ? 0 : java.util.regex.Pattern.CASE_INSENSITIVE;
@@ -266,17 +265,9 @@ public class RegularMatcher {
         java.util.regex.Matcher matcher = pattern.matcher(content);
 
         if (secondRegex.isEmpty()) {
-            if ("{0}".equals(format)) {
-                while (matcher.find()) {
-                    if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
-                        retList.add(matcher.group(1));
-                    }
-                }
-            } else {
-                while (matcher.find()) {
-                    if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
-                        retList.add(matcher.group(1));
-                    }
+            while (matcher.find()) {
+                if (matcher.groupCount() > 0 && !matcher.group(1).isEmpty()) {
+                    retList.add(matcher.group(1));
                 }
             }
         } else {

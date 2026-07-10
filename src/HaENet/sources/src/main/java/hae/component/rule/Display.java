@@ -12,7 +12,6 @@ public class Display extends JPanel {
     public JTextField formatTextField;
     public JTextField ruleNameTextField;
     public JComboBox<String> scopeComboBox;
-    public JComboBox<String> engineComboBox;
     public JComboBox<String> colorComboBox;
     public JComboBox<Boolean> sensitiveComboBox;
     public JTextArea validatorTextField;
@@ -44,21 +43,11 @@ public class Display extends JPanel {
         addLabel("Scope:", 4, c);
         scopeComboBox = addComboBox(AppConstants.scope, 4, c);
 
-        addLabel("Engine:", 5, c);
-        engineComboBox = addComboBox(AppConstants.engine, 5, c);
-        engineComboBox.addActionListener(e -> {
-            boolean isNfa = "nfa".equals(
-                    engineComboBox.getSelectedItem().toString()
-            );
-            formatTextField.setEnabled(isNfa);
-            formatTextField.setText(isNfa ? formatTextField.getText() : "{0}");
-        });
+        addLabel("Color:", 5, c);
+        colorComboBox = addComboBox(AppConstants.color, 5, c);
 
-        addLabel("Color:", 6, c);
-        colorComboBox = addComboBox(AppConstants.color, 6, c);
-
-        addLabel("Sensitive:", 7, c);
-        sensitiveComboBox = addComboBox(new Boolean[]{true, false}, 7, c);
+        addLabel("Sensitive:", 6, c);
+        sensitiveComboBox = addComboBox(new Boolean[]{true, false}, 6, c);
 
         JPanel validatorPanel = new JPanel(new GridBagLayout());
         validatorPanel.setBorder(
@@ -104,7 +93,7 @@ public class Display extends JPanel {
         validatorPanel.add(validatorBulkTextField, vc);
 
         c.gridx = 0;
-        c.gridy = 8;
+        c.gridy = 7;
         c.gridwidth = 2;
         c.weightx = 1.0;
         add(validatorPanel, c);
