@@ -116,6 +116,9 @@ Temporary Items
 **/build/
 !src/**/build/
 
+# Auto-generated from root templates/ during build
+src/HaENet/sources/src/main/resources/templates/
+
 # Ignore Gradle GUI config
 gradle-app.setting
 

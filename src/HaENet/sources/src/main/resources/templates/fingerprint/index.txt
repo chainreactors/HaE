@@ -1,7 +1,0 @@
-druid.yaml
-json-web-token.yaml
-pdf-js-viewer.yaml
-shiro.yaml
-swagger-ui.yaml
-ueditor.yaml
-vite-devmode.yaml

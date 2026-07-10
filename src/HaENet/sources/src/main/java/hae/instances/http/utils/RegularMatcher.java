@@ -45,10 +45,17 @@ public class RegularMatcher {
     private void initProtonEngine() {
         try {
             protonEngine = new ProtonEngine();
-            String rulesJson = buildRulesJson();
-            if (rulesJson != null && !rulesJson.isEmpty()) {
-                protonEngine.loadRules(rulesJson);
+
+            java.io.File templatesDir = new java.io.File(configLoader.getTemplatesPath());
+            if (templatesDir.exists() && templatesDir.isDirectory()) {
+                protonEngine.loadTemplateFiles(templatesDir);
+            } else {
+                String rulesJson = buildRulesJson();
+                if (rulesJson != null && !rulesJson.isEmpty()) {
+                    protonEngine.loadRules(rulesJson);
+                }
             }
+
             api.logging().logToOutput("[*] Proton engine loaded (version: " + protonEngine.version() + ")");
         } catch (Exception e) {
             api.logging().logToError("[!] Proton engine not available, falling back to Java regex: " + e.getMessage());
@@ -59,9 +66,14 @@ public class RegularMatcher {
     public void reloadProtonRules() {
         if (protonEngine != null) {
             try {
-                String rulesJson = buildRulesJson();
-                if (rulesJson != null && !rulesJson.isEmpty()) {
-                    protonEngine.updateRules(rulesJson);
+                java.io.File templatesDir = new java.io.File(configLoader.getTemplatesPath());
+                if (templatesDir.exists() && templatesDir.isDirectory()) {
+                    protonEngine.loadTemplateFiles(templatesDir);
+                } else {
+                    String rulesJson = buildRulesJson();
+                    if (rulesJson != null && !rulesJson.isEmpty()) {
+                        protonEngine.updateRules(rulesJson);
+                    }
                 }
             } catch (Exception e) {
                 api.logging().logToError("[!] Proton rule reload failed: " + e.getMessage());
