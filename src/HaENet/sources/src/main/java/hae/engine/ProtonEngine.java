@@ -57,6 +57,7 @@ public class ProtonEngine implements AutoCloseable {
             for (java.io.File f : files) {
                 try {
                     String content = new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+                    if (!extractMetaBool(content, "loaded", true)) continue;
                     String scope = extractMetaField(content, "scope", "any");
                     String color = extractMetaField(content, "color", "gray");
                     String name = extractInfoField(content, "name", f.getName());
@@ -108,6 +109,12 @@ public class ProtonEngine implements AutoCloseable {
         String val = yaml.substring(valStart, lineEnd).trim();
         if (val.startsWith("'") || val.startsWith("\"")) val = val.substring(1, val.length() - 1);
         return val.isEmpty() ? defaultVal : val;
+    }
+
+    private static boolean extractMetaBool(String yaml, String field, boolean defaultVal) {
+        String val = extractMetaField(yaml, field, null);
+        if (val == null) return defaultVal;
+        return "true".equalsIgnoreCase(val);
     }
 
     private static String extractInfoField(String yaml, String field, String defaultVal) {

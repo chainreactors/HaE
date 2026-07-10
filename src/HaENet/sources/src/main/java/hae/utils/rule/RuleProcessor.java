@@ -45,6 +45,7 @@ public class RuleProcessor {
         Yaml yaml = new Yaml(representer, dop);
 
         Set<String> writtenFiles = new java.util.HashSet<>();
+        Set<String> activeGroupDirs = new java.util.HashSet<>();
 
         ruleRepository.getAll().forEach((groupName, rules) -> {
             String dirName = ConfigLoader.groupNameToDir(groupName);
@@ -52,6 +53,7 @@ public class RuleProcessor {
             if (!groupDir.exists()) {
                 groupDir.mkdirs();
             }
+            activeGroupDirs.add(groupDir.getAbsolutePath());
 
             for (RuleDefinition rule : rules) {
                 Map<String, Object> tmpl = rule.toTemplateYaml(groupName);
@@ -67,6 +69,35 @@ public class RuleProcessor {
                 }
             }
         });
+
+        cleanOrphanFiles(templatesDir, writtenFiles, activeGroupDirs);
+    }
+
+    private void cleanOrphanFiles(File templatesDir, Set<String> writtenFiles, Set<String> activeGroupDirs) {
+        File[] groupDirs = templatesDir.listFiles(File::isDirectory);
+        if (groupDirs == null) return;
+
+        for (File groupDir : groupDirs) {
+            if (!activeGroupDirs.contains(groupDir.getAbsolutePath())) {
+                deleteDirectory(groupDir);
+                continue;
+            }
+            File[] files = groupDir.listFiles(f -> f.getName().endsWith(".yaml") || f.getName().endsWith(".yml"));
+            if (files == null) continue;
+            for (File f : files) {
+                if (!writtenFiles.contains(f.getAbsolutePath())) {
+                    f.delete();
+                }
+            }
+        }
+    }
+
+    private static void deleteDirectory(File dir) {
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) f.delete();
+        }
+        dir.delete();
     }
 
     private static String slugify(String s) {

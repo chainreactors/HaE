@@ -246,10 +246,10 @@ public class Tester extends JPanel {
         this.ruleName = String.valueOf(rowData.get(1));
         this.firstRegex = String.valueOf(rowData.get(2));
 
-        String command = String.valueOf(rowData.get(9));
+        String command = String.valueOf(rowData.get(8));
 
         int timeout = 5000;
-        Object tObj = rowData.get(10);
+        Object tObj = rowData.get(9);
         if (tObj instanceof Number) timeout = ((Number) tObj).intValue();
         else try {
             timeout = Integer.parseInt(tObj.toString().trim());
@@ -257,7 +257,7 @@ public class Tester extends JPanel {
         }
 
         int bulk = 500;
-        Object bObj = rowData.get(11);
+        Object bObj = rowData.get(10);
         if (bObj instanceof Number) bulk = ((Number) bObj).intValue();
         else try {
             bulk = Integer.parseInt(bObj.toString().trim());

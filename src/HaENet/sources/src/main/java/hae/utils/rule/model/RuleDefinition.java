@@ -12,14 +12,13 @@ public class RuleDefinition {
     private String format;
     private String color;
     private String scope;
-    private String engine;
     private boolean sensitive;
     private String validator;
     private int validatorTimeout;
     private int validatorBulk;
 
     public RuleDefinition(boolean loaded, String name, String firstRegex, String secondRegex,
-                          String format, String color, String scope, String engine, boolean sensitive,
+                          String format, String color, String scope, boolean sensitive,
                           String validator, int validatorTimeout, int validatorBulk) {
         this.loaded = loaded;
         this.name = name;
@@ -28,14 +27,11 @@ public class RuleDefinition {
         this.format = format;
         this.color = color;
         this.scope = scope;
-        this.engine = engine;
         this.sensitive = sensitive;
         this.validator = validator;
         this.validatorTimeout = validatorTimeout;
         this.validatorBulk = validatorBulk;
     }
-
-    // ---- Getters ----
 
     public static RuleDefinition fromObjectArray(Object[] objects) {
         return new RuleDefinition(
@@ -46,142 +42,48 @@ public class RuleDefinition {
                 (String) objects[4],
                 (String) objects[5],
                 (String) objects[6],
-                (String) objects[7],
-                (boolean) objects[8],
-                (String) objects[9],
-                (int) objects[10],
-                (int) objects[11]
+                (boolean) objects[7],
+                (String) objects[8],
+                (int) objects[9],
+                (int) objects[10]
         );
     }
 
-    public static RuleDefinition fromYamlMap(Map<String, Object> fields) {
-        String validatorCmd = "";
-        int timeout = 5000;
-        int bulk = 500;
+    public boolean isLoaded() { return loaded; }
+    public void setLoaded(boolean loaded) { this.loaded = loaded; }
 
-        Object validatorObj = fields.get("validator");
-        if (validatorObj instanceof Map) {
-            Map<String, Object> vMap = (Map<String, Object>) validatorObj;
-            validatorCmd = String.valueOf(vMap.getOrDefault("command", ""));
-            timeout = vMap.containsKey("timeout") ? ((Number) vMap.get("timeout")).intValue() : 0;
-            bulk = vMap.containsKey("bulk") ? ((Number) vMap.get("bulk")).intValue() : 0;
-        }
-        return new RuleDefinition(
-                (boolean) fields.getOrDefault("loaded", false),
-                (String) fields.getOrDefault("name", ""),
-                (String) fields.getOrDefault("f_regex", ""),
-                (String) fields.getOrDefault("s_regex", ""),
-                (String) fields.getOrDefault("format", "{0}"),
-                (String) fields.getOrDefault("color", "gray"),
-                (String) fields.getOrDefault("scope", "any"),
-                (String) fields.getOrDefault("engine", "nfa"),
-                (boolean) fields.getOrDefault("sensitive", false),
-                validatorCmd,
-                timeout,
-                bulk
-        );
-    }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
 
-    public boolean isLoaded() {
-        return loaded;
-    }
+    public String getFirstRegex() { return firstRegex; }
+    public void setFirstRegex(String firstRegex) { this.firstRegex = firstRegex; }
 
-    public void setLoaded(boolean loaded) {
-        this.loaded = loaded;
-    }
+    public String getSecondRegex() { return secondRegex; }
+    public void setSecondRegex(String secondRegex) { this.secondRegex = secondRegex; }
 
-    public String getName() {
-        return name;
-    }
+    public String getFormat() { return format; }
+    public void setFormat(String format) { this.format = format; }
 
-    public void setName(String name) {
-        this.name = name;
-    }
+    public String getColor() { return color; }
+    public void setColor(String color) { this.color = color; }
 
-    public String getFirstRegex() {
-        return firstRegex;
-    }
+    public String getScope() { return scope; }
+    public void setScope(String scope) { this.scope = scope; }
 
-    public void setFirstRegex(String firstRegex) {
-        this.firstRegex = firstRegex;
-    }
+    public boolean isSensitive() { return sensitive; }
+    public void setSensitive(boolean sensitive) { this.sensitive = sensitive; }
 
-    public String getSecondRegex() {
-        return secondRegex;
-    }
+    public String getValidator() { return validator; }
+    public void setValidator(String validator) { this.validator = validator; }
 
-    public void setSecondRegex(String secondRegex) {
-        this.secondRegex = secondRegex;
-    }
+    public int getValidatorTimeout() { return validatorTimeout; }
+    public void setValidatorTimeout(int validatorTimeout) { this.validatorTimeout = validatorTimeout; }
 
-    public String getFormat() {
-        return format;
-    }
-
-    public void setFormat(String format) {
-        this.format = format;
-    }
-
-    // ---- Setters ----
-
-    public String getColor() {
-        return color;
-    }
-
-    public void setColor(String color) {
-        this.color = color;
-    }
-
-    public String getScope() {
-        return scope;
-    }
-
-    public void setScope(String scope) {
-        this.scope = scope;
-    }
-
-    public String getEngine() {
-        return engine;
-    }
-
-    public void setEngine(String engine) {
-        this.engine = engine;
-    }
-
-    public boolean isSensitive() {
-        return sensitive;
-    }
-
-    public void setSensitive(boolean sensitive) {
-        this.sensitive = sensitive;
-    }
-
-    public String getValidator() {
-        return validator;
-    }
-
-    public void setValidator(String validator) {
-        this.validator = validator;
-    }
-
-    public int getValidatorTimeout() {
-        return validatorTimeout;
-    }
-
-    public void setValidatorTimeout(int validatorTimeout) {
-        this.validatorTimeout = validatorTimeout;
-    }
-
-    public int getValidatorBulk() {
-        return validatorBulk;
-    }
-
-    public void setValidatorBulk(int validatorBulk) {
-        this.validatorBulk = validatorBulk;
-    }
+    public int getValidatorBulk() { return validatorBulk; }
+    public void setValidatorBulk(int validatorBulk) { this.validatorBulk = validatorBulk; }
 
     public Object[] toObjectArray() {
-        return new Object[]{loaded, name, firstRegex, secondRegex, format, color, scope, engine, sensitive, validator, validatorTimeout, validatorBulk};
+        return new Object[]{loaded, name, firstRegex, secondRegex, format, color, scope, sensitive, validator, validatorTimeout, validatorBulk};
     }
 
     public static RuleDefinition fromTemplateYaml(Map<String, Object> tmpl, String group) {
@@ -241,7 +143,6 @@ public class RuleDefinition {
                 format,
                 String.valueOf(meta.getOrDefault("color", "gray")),
                 String.valueOf(meta.getOrDefault("scope", "any")),
-                String.valueOf(meta.getOrDefault("engine", "nfa")),
                 sensitive,
                 "", 0, 0
         );
@@ -253,7 +154,6 @@ public class RuleDefinition {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("color", color);
         meta.put("scope", scope);
-        meta.put("engine", engine);
         meta.put("sensitive", sensitive);
         meta.put("loaded", loaded);
 
@@ -337,26 +237,5 @@ public class RuleDefinition {
             return (format.charAt(1) - '0') + 1;
         }
         return 1;
-    }
-
-    public Map<String, Object> toYamlMap() {
-        Map<String, Object> fields = new LinkedHashMap<>();
-        fields.put("name", name);
-        fields.put("loaded", loaded);
-        fields.put("f_regex", firstRegex);
-        fields.put("s_regex", secondRegex);
-        fields.put("format", format);
-        fields.put("color", color);
-        fields.put("scope", scope);
-        fields.put("engine", engine);
-        fields.put("sensitive", sensitive);
-        if (validator != null && !validator.isBlank()) {
-            Map<String, Object> validatorMap = new LinkedHashMap<>();
-            validatorMap.put("command", validator);
-            if (validatorTimeout > 0) validatorMap.put("timeout", validatorTimeout);
-            if (validatorBulk > 0) validatorMap.put("bulk", validatorBulk);
-            fields.put("validator", validatorMap);
-        }
-        return fields;
     }
 }
