@@ -43,16 +43,6 @@ public class ProtonEngine implements AutoCloseable {
         }
     }
 
-    public void loadRules(String rulesJson) {
-        close();
-        List<HaERule> rules = parseRulesJson(rulesJson);
-        buildScopeScanners(rules);
-    }
-
-    public void updateRules(String rulesJson) {
-        loadRules(rulesJson);
-    }
-
     public void loadTemplateFiles(java.io.File templatesDir) {
         close();
         Map<String, List<TemplateRuleMeta>> grouped = new LinkedHashMap<>();
@@ -248,100 +238,6 @@ public class ProtonEngine implements AutoCloseable {
         }
     }
 
-    // ─── Internal: build scanners ───
-
-    private void buildScopeScanners(List<HaERule> rules) {
-        Map<String, List<HaERule>> grouped = new LinkedHashMap<>();
-        for (HaERule r : rules) {
-            String scope = normalizeScope(r.scope);
-            grouped.computeIfAbsent(scope, k -> new ArrayList<>()).add(r);
-        }
-
-        for (Map.Entry<String, List<HaERule>> entry : grouped.entrySet()) {
-            String scope = entry.getKey();
-            List<HaERule> scopeRules = entry.getValue();
-
-            String yaml = toProtonYAML(scopeRules);
-            byte[] yamlBytes = yaml.getBytes(StandardCharsets.UTF_8);
-            int handle = lib.ProtonLoadTemplate(yamlBytes, yamlBytes.length);
-            if (handle <= 0) continue;
-
-            Map<String, RuleMeta> meta = new LinkedHashMap<>();
-            for (HaERule r : scopeRules) {
-                Pattern sRegex = null;
-                if (r.sRegex != null && !r.sRegex.isEmpty()) {
-                    String sp = r.sRegex;
-                    if (!r.sensitive) sp = "(?i)" + sp;
-                    try { sRegex = Pattern.compile(sp); } catch (Exception ignored) {}
-                }
-                meta.put(r.name, new RuleMeta(r.name, r.color, scope, sRegex));
-            }
-
-            scopeScanners.put(scope, new ScopeScanner(new AtomicInteger(handle), meta));
-        }
-    }
-
-    private static String toProtonYAML(List<HaERule> rules) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < rules.size(); i++) {
-            if (i > 0) sb.append("\n---\n");
-            HaERule r = rules.get(i);
-            String pattern = r.fRegex;
-            if (!r.sensitive) pattern = "(?i)" + pattern;
-            int regexGroup = parseFormatGroup(r.format);
-
-            sb.append("id: ").append(yamlQuote(slugify(r.name))).append('\n');
-            sb.append("info:\n");
-            sb.append("  name: ").append(yamlQuote(r.name)).append('\n');
-            sb.append("  severity: ").append(colorToSeverity(r.color)).append('\n');
-            sb.append("file:\n");
-            sb.append("  - extensions:\n");
-            sb.append("      - all\n");
-            sb.append("    extractors:\n");
-            sb.append("      - type: regex\n");
-            sb.append("        regex:\n");
-            sb.append("          - ").append(yamlQuote(pattern)).append('\n');
-            sb.append("        regex-group: ").append(regexGroup).append('\n');
-        }
-        return sb.toString();
-    }
-
-    // ─── Internal: parse HaE JSON rules ───
-
-    private static List<HaERule> parseRulesJson(String json) {
-        List<HaERule> rules = new ArrayList<>();
-        int pos = json.indexOf("\"rules\"");
-        if (pos < 0) return rules;
-
-        while (true) {
-            int ruleStart = json.indexOf("\"f_regex\"", pos);
-            if (ruleStart < 0) break;
-
-            int objStart = json.lastIndexOf('{', ruleStart);
-            int objEnd = findMatchingBrace(json, objStart);
-            if (objEnd < 0) break;
-
-            String obj = json.substring(objStart, objEnd + 1);
-            if (!extractBool(obj, "loaded")) {
-                pos = objEnd + 1;
-                continue;
-            }
-
-            HaERule rule = new HaERule();
-            rule.name = extractStr(obj, "name");
-            rule.fRegex = unescapeJsonStr(extractStr(obj, "f_regex"));
-            rule.sRegex = unescapeJsonStr(extractStr(obj, "s_regex"));
-            rule.format = extractStr(obj, "format");
-            rule.color = extractStr(obj, "color");
-            rule.scope = extractStr(obj, "scope");
-            rule.sensitive = extractBool(obj, "sensitive");
-            rules.add(rule);
-
-            pos = objEnd + 1;
-        }
-        return rules;
-    }
-
     // ─── Internal: parse findings JSON from native ───
 
     private static List<Finding> parseFindings(String json) {
@@ -398,40 +294,6 @@ public class ProtonEngine implements AutoCloseable {
 
     // ─── Utility methods ───
 
-    private static int parseFormatGroup(String format) {
-        if (format == null || format.isEmpty() || "{0}".equals(format)) return 1;
-        if (format.length() == 3 && format.charAt(0) == '{' && format.charAt(2) == '}') {
-            return (format.charAt(1) - '0') + 1;
-        }
-        return 1;
-    }
-
-    private static String colorToSeverity(String color) {
-        if (color == null) return "info";
-        switch (color) {
-            case "red":    return "critical";
-            case "orange": return "high";
-            case "yellow": return "medium";
-            case "green":  return "low";
-            default:       return "info";
-        }
-    }
-
-    private static String slugify(String s) {
-        if (s == null) return "unknown";
-        StringBuilder sb = new StringBuilder(s.length());
-        for (char c : s.toCharArray()) {
-            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') sb.append(c);
-            else if (c >= 'A' && c <= 'Z') sb.append((char)(c + 32));
-            else sb.append('-');
-        }
-        return sb.toString();
-    }
-
-    private static String yamlQuote(String s) {
-        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
-    }
-
     private static String extractStr(String obj, String key) {
         String needle = "\"" + key + "\"";
         int ki = obj.indexOf(needle);
@@ -448,17 +310,6 @@ public class ProtonEngine implements AutoCloseable {
             end++;
         }
         return obj.substring(vi + 1, end);
-    }
-
-    private static boolean extractBool(String obj, String key) {
-        String needle = "\"" + key + "\"";
-        int ki = obj.indexOf(needle);
-        if (ki < 0) return false;
-        int ci = obj.indexOf(':', ki + needle.length());
-        if (ci < 0) return false;
-        int vi = ci + 1;
-        while (vi < obj.length() && obj.charAt(vi) == ' ') vi++;
-        return vi + 4 <= obj.length() && obj.substring(vi, vi + 4).equals("true");
     }
 
     private static String unescapeJsonStr(String s) {
@@ -518,11 +369,6 @@ public class ProtonEngine implements AutoCloseable {
     }
 
     // ─── Internal data types ───
-
-    private static final class HaERule {
-        String name, fRegex, sRegex, format, color, scope;
-        boolean sensitive;
-    }
 
     private static final class Finding {
         final String templateName;
