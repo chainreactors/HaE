@@ -45,17 +45,7 @@ public class RegularMatcher {
     private void initProtonEngine() {
         try {
             protonEngine = new ProtonEngine();
-
-            java.io.File templatesDir = new java.io.File(configLoader.getTemplatesPath());
-            if (templatesDir.exists() && templatesDir.isDirectory()) {
-                protonEngine.loadTemplateFiles(templatesDir);
-            } else {
-                String rulesJson = buildRulesJson();
-                if (rulesJson != null && !rulesJson.isEmpty()) {
-                    protonEngine.loadRules(rulesJson);
-                }
-            }
-
+            protonEngine.loadTemplateFiles(new java.io.File(configLoader.getTemplatesPath()));
             api.logging().logToOutput("[*] Proton engine loaded (version: " + protonEngine.version() + ")");
         } catch (Exception e) {
             api.logging().logToError("[!] Proton engine not available, falling back to Java regex: " + e.getMessage());
@@ -66,15 +56,7 @@ public class RegularMatcher {
     public void reloadProtonRules() {
         if (protonEngine != null) {
             try {
-                java.io.File templatesDir = new java.io.File(configLoader.getTemplatesPath());
-                if (templatesDir.exists() && templatesDir.isDirectory()) {
-                    protonEngine.loadTemplateFiles(templatesDir);
-                } else {
-                    String rulesJson = buildRulesJson();
-                    if (rulesJson != null && !rulesJson.isEmpty()) {
-                        protonEngine.updateRules(rulesJson);
-                    }
-                }
+                protonEngine.loadTemplateFiles(new java.io.File(configLoader.getTemplatesPath()));
             } catch (Exception e) {
                 api.logging().logToError("[!] Proton rule reload failed: " + e.getMessage());
             }
@@ -335,54 +317,4 @@ public class RegularMatcher {
         }
     }
 
-    private String buildRulesJson() {
-        StringBuilder sb = new StringBuilder("{\"rules\":[");
-        Set<String> groupNames = ruleRepository.getAllGroupNames();
-        boolean firstGroup = true;
-
-        for (String groupName : groupNames) {
-            if (!firstGroup) sb.append(',');
-            firstGroup = false;
-
-            sb.append("{\"group\":\"").append(jsonEscape(groupName)).append("\",\"rule\":[");
-            List<RuleDefinition> rules = ruleRepository.getRulesByGroup(groupName);
-            boolean firstRule = true;
-
-            for (RuleDefinition rule : rules) {
-                if (!firstRule) sb.append(',');
-                firstRule = false;
-
-                sb.append("{\"name\":\"").append(jsonEscape(rule.getName())).append('"');
-                sb.append(",\"loaded\":").append(rule.isLoaded());
-                sb.append(",\"f_regex\":\"").append(jsonEscape(rule.getFirstRegex())).append('"');
-                sb.append(",\"s_regex\":\"").append(jsonEscape(rule.getSecondRegex())).append('"');
-                sb.append(",\"format\":\"").append(jsonEscape(rule.getFormat())).append('"');
-                sb.append(",\"color\":\"").append(jsonEscape(rule.getColor())).append('"');
-                sb.append(",\"scope\":\"").append(jsonEscape(rule.getScope())).append('"');
-                sb.append(",\"engine\":\"").append(jsonEscape(rule.getEngine())).append('"');
-                sb.append(",\"sensitive\":").append(rule.isSensitive());
-                sb.append('}');
-            }
-            sb.append("]}");
-        }
-        sb.append("]}");
-        return sb.toString();
-    }
-
-    private static String jsonEscape(String s) {
-        if (s == null) return "";
-        StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '"': sb.append("\\\""); break;
-                case '\\': sb.append("\\\\"); break;
-                case '\n': sb.append("\\n"); break;
-                case '\r': sb.append("\\r"); break;
-                case '\t': sb.append("\\t"); break;
-                default: sb.append(c);
-            }
-        }
-        return sb.toString();
-    }
 }
