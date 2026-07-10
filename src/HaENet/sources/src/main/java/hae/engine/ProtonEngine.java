@@ -53,6 +53,95 @@ public class ProtonEngine implements AutoCloseable {
         loadRules(rulesJson);
     }
 
+    public void loadTemplateFiles(java.io.File templatesDir) {
+        close();
+        Map<String, List<TemplateRuleMeta>> grouped = new LinkedHashMap<>();
+
+        java.io.File[] groupDirs = templatesDir.listFiles(java.io.File::isDirectory);
+        if (groupDirs == null) return;
+
+        for (java.io.File groupDir : groupDirs) {
+            java.io.File[] files = groupDir.listFiles(f -> f.getName().endsWith(".yaml") || f.getName().endsWith(".yml"));
+            if (files == null) continue;
+
+            for (java.io.File f : files) {
+                try {
+                    String content = new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+                    String scope = extractMetaField(content, "scope", "any");
+                    String color = extractMetaField(content, "color", "gray");
+                    String name = extractInfoField(content, "name", f.getName());
+                    String sRegex = extractMetaField(content, "s_regex", null);
+
+                    String normalizedScope = normalizeScope(scope);
+                    grouped.computeIfAbsent(normalizedScope, k -> new ArrayList<>())
+                            .add(new TemplateRuleMeta(name, color, normalizedScope, sRegex, content));
+                } catch (Exception ignored) {}
+            }
+        }
+
+        for (Map.Entry<String, List<TemplateRuleMeta>> entry : grouped.entrySet()) {
+            String scope = entry.getKey();
+            List<TemplateRuleMeta> metas = entry.getValue();
+
+            StringBuilder yamlBuf = new StringBuilder();
+            Map<String, RuleMeta> metaMap = new LinkedHashMap<>();
+
+            for (int i = 0; i < metas.size(); i++) {
+                if (i > 0) yamlBuf.append("\n---\n");
+                yamlBuf.append(metas.get(i).yamlContent);
+
+                java.util.regex.Pattern sRegexPat = null;
+                if (metas.get(i).sRegex != null && !metas.get(i).sRegex.isEmpty()) {
+                    try { sRegexPat = java.util.regex.Pattern.compile(metas.get(i).sRegex); }
+                    catch (Exception ignored) {}
+                }
+                metaMap.put(metas.get(i).name, new RuleMeta(metas.get(i).name, metas.get(i).color, scope, sRegexPat));
+            }
+
+            byte[] yamlBytes = yamlBuf.toString().getBytes(StandardCharsets.UTF_8);
+            int handle = lib.ProtonLoadTemplate(yamlBytes, yamlBytes.length);
+            if (handle <= 0) continue;
+
+            scopeScanners.put(scope, new ScopeScanner(new AtomicInteger(handle), metaMap));
+        }
+    }
+
+    private static String extractMetaField(String yaml, String field, String defaultVal) {
+        String needle = field + ":";
+        int metaIdx = yaml.indexOf("metadata:");
+        if (metaIdx < 0) return defaultVal;
+        int fieldIdx = yaml.indexOf(needle, metaIdx);
+        if (fieldIdx < 0) return defaultVal;
+        int valStart = fieldIdx + needle.length();
+        int lineEnd = yaml.indexOf('\n', valStart);
+        if (lineEnd < 0) lineEnd = yaml.length();
+        String val = yaml.substring(valStart, lineEnd).trim();
+        if (val.startsWith("'") || val.startsWith("\"")) val = val.substring(1, val.length() - 1);
+        return val.isEmpty() ? defaultVal : val;
+    }
+
+    private static String extractInfoField(String yaml, String field, String defaultVal) {
+        String needle = field + ":";
+        int infoIdx = yaml.indexOf("info:");
+        if (infoIdx < 0) return defaultVal;
+        int fieldIdx = yaml.indexOf(needle, infoIdx);
+        if (fieldIdx < 0) return defaultVal;
+        int valStart = fieldIdx + needle.length();
+        int lineEnd = yaml.indexOf('\n', valStart);
+        if (lineEnd < 0) lineEnd = yaml.length();
+        String val = yaml.substring(valStart, lineEnd).trim();
+        if (val.startsWith("'") || val.startsWith("\"")) val = val.substring(1, val.length() - 1);
+        return val.isEmpty() ? defaultVal : val;
+    }
+
+    private static final class TemplateRuleMeta {
+        final String name, color, scope, sRegex, yamlContent;
+        TemplateRuleMeta(String name, String color, String scope, String sRegex, String yamlContent) {
+            this.name = name; this.color = color; this.scope = scope;
+            this.sRegex = sRegex; this.yamlContent = yamlContent;
+        }
+    }
+
     public boolean isLoaded() {
         return !scopeScanners.isEmpty();
     }
